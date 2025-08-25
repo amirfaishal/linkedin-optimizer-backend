@@ -28,9 +28,10 @@ const registerUser = async (req, res) => {
     let nextId;
     try {
       const idResult = await client.query(
-        "SELECT COALESCE(MAX(id), 0) + 1 AS next_id FROM usertable FOR UPDATE"
-      );
-      nextId = idResult.rows[0].next_id;
+  "SELECT COALESCE(MAX(CAST(SUBSTRING(u_id, 4) AS INTEGER)), 0) + 1 AS next_id FROM usertable FOR UPDATE"
+);
+nextId = idResult.rows[0].next_id;
+
     } catch (seqErr) {
       await client.query("ROLLBACK");
       console.error("ID generation error:", seqErr);
