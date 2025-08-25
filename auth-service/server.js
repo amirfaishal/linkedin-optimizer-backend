@@ -1,5 +1,3 @@
-// backend/server.js
-
 const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
@@ -9,14 +7,28 @@ const authRoutes = require('./auth');
 dotenv.config();
 const app = express();
 
-// ✅ Middlewares
-app.use(cors({ origin: 'http://localhost:5173' })); // 
+// ✅ Allowed origins
+const allowedOrigins = [
+  'http://localhost:5173',                 // local dev
+  'https://carbonpositivefinal.onrender.com' // deployed frontend
+];
+
+// ✅ CORS middleware
+app.use(cors({
+  origin: (origin, callback) => {
+    // allow requests with no origin (like mobile apps, curl, etc.)
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true
+}));
+
 app.use(express.json());
 
-
-// ✅ Admin routes
-
-// ✅ Other routes
+// ✅ Routes
 app.use('/api/auth', authRoutes);
 
 // ✅ Test endpoint
