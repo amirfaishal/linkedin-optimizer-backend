@@ -6,43 +6,79 @@ const pool = require("./db");
 const registerUser = async (req, res) => {
   const { username, email, password, role } = req.body;
 
+  const client = await pool.connect();
   try {
+    // ✅ Begin transaction
+    await client.query("BEGIN");
+
     // ✅ 1. Check if user already exists
-    const existing = await pool.query(
+    const existing = await client.query(
       "SELECT * FROM usertable WHERE email = $1",
       [email]
     );
     if (existing.rows.length > 0) {
+      await client.query("ROLLBACK");
       return res.status(400).json({ message: "User already exists" });
     }
 
     // ✅ 2. Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // ✅ 3. Generate next ID using sequence (safe from duplicates)
-    const idResult = await pool.query("SELECT nextval('user_id_seq') as next_id");
-    const nextId = idResult.rows[0].next_id;
-    const uId = `USR${nextId.toString().padStart(4, "0")}`;
+    // ✅ 3. Generate next ID safely (with lock to avoid duplicates)
+    let nextId;
+    try {
+      const idResult = await client.query(
+        "SELECT COALESCE(MAX(id), 0) + 1 AS next_id FROM usertable FOR UPDATE"
+      );
+      nextId = idResult.rows[0].next_id;
+    } catch (seqErr) {
+      await client.query("ROLLBACK");
+      console.error("ID generation error:", seqErr);
+      return res.status(500).json({ message: "Failed to generate user ID" });
+    }
 
+    const uId = `USR${nextId.toString().padStart(4, "0")}`;
     const createDate = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
 
     // ✅ 4. Insert user
-    const newUser = await pool.query(
-      `INSERT INTO usertable (u_id, username, email, password, role, create_date)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-      [uId, username, email, hashedPassword, role === "user" ? "U" : "O", createDate]
-    );
+    let newUser;
+    try {
+      newUser = await client.query(
+        `INSERT INTO usertable (u_id, username, email, password, role, create_date)
+         VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+        [uId, username, email, hashedPassword, role === "user" ? "U" : "O", createDate]
+      );
+    } catch (insertErr) {
+      await client.query("ROLLBACK");
+      console.error("User insert error:", insertErr);
+      return res.status(500).json({ message: "Database insert failed" });
+    }
 
     // ✅ 5. Create credit record
-    await pool.query(
-      `INSERT INTO credittable (uid, token_value) VALUES ($1, 0)`,
-      [uId]
-    );
+    try {
+      await client.query(
+        `INSERT INTO credittable (uid, token_value) VALUES ($1, 0)`,
+        [uId]
+      );
+    } catch (creditErr) {
+      await client.query("ROLLBACK");
+      console.error("Credit insert error:", creditErr);
+      return res.status(500).json({ message: "Failed to create credit entry" });
+    }
+
+    // ✅ Commit transaction
+    await client.query("COMMIT");
 
     // ✅ 6. Generate JWT
-    const token = jwt.sign({ id: newUser.rows[0].id }, process.env.JWT_SECRET, {
-      expiresIn: "1d",
-    });
+    let token;
+    try {
+      token = jwt.sign({ id: newUser.rows[0].id }, process.env.JWT_SECRET, {
+        expiresIn: "1d",
+      });
+    } catch (jwtErr) {
+      console.error("JWT error:", jwtErr);
+      return res.status(500).json({ message: "Failed to generate token" });
+    }
 
     // ✅ 7. Return response
     const roleValue = newUser.rows[0].role === "O" ? "organization" : "user";
@@ -58,8 +94,11 @@ const registerUser = async (req, res) => {
     });
 
   } catch (err) {
+    await client.query("ROLLBACK");
     console.error("Registration Error:", err);
     res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
   }
 };
 
