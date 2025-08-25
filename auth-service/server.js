@@ -10,7 +10,8 @@ const app = express();
 // ✅ Allowed origins
 const allowedOrigins = [
   'http://localhost:5173',                 // local dev
-  'https://carbonpositivefinal.onrender.com' // deployed frontend
+  'https://carbonpositivefinal.onrender.com',
+  'https://www.gocarbonpositive.com' // deployed frontend
 ];
 
 // ✅ CORS middleware
