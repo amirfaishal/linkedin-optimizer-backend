@@ -28,7 +28,8 @@ connectMongo();
 const allowedOrigins = [
   'http://localhost:5173',                  // local dev
   'https://carbonpositivefinal.onrender.com', // Render frontend
-  'https://www.gocarbonpositive.com'         // custom domain
+  'https://www.gocarbonpositive.com',
+  'https://frontend-user-etef.onrender.com'// custom domain
 ];
 
 // ✅ CORS middleware
